@@ -275,7 +275,7 @@ class MultiAgentPatrolling(gym.Env):
 				 ground_truth_type='macro_plastic',
 				 convert_to_uint8=True,
 				 frame_stacking = 0,
-				 state_index_stacking = (0,1,2,3,4),
+				 state_index_stacking = (1,2,3),
      			 trail_length = 10	):
 
 		""" The gym environment """
@@ -414,7 +414,7 @@ class MultiAgentPatrolling(gym.Env):
 		self.n_of_trash = np.sum(self.gt.number_of_trash_elements_in_each_spot)	
 		self.update_metrics()
     
-		return self.state if self.frame_stacking is None else self.frame_stacking.process(self.state)
+		return self.state if self.frame_stacking is None else self.frame_stacking.process(self.state) , {}
 
 
 	def update_state(self):
@@ -512,7 +512,7 @@ class MultiAgentPatrolling(gym.Env):
 		# Update ground truth if dynamic #
 		if self.dynamic:
 			self.gt.step()
-
+		self.info = {"trash_coverage": self.percentage_of_trash_cleaned, "map_coverage": self.percentage_of_map_visited}
 		return self.state if self.frame_stacking is None else self.frame_stacking.process(self.state), reward, done, self.info
 
 	def update_model(self,action):
