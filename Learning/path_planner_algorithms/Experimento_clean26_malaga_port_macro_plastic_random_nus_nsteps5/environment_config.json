@@ -1,0 +1,36 @@
+{
+    "number_of_agents": 4,
+    "miopic": true,
+    "fleet_initial_positions": [
+        [
+            12,
+            7
+        ],
+        [
+            14,
+            5
+        ],
+        [
+            16,
+            3
+        ],
+        [
+            18,
+            1
+        ]
+    ],
+    "distance_budget": 200,
+    "detection_length": 2,
+    "movement_length": 1,
+    "min_movements_if_nocollisions": 100,
+    "max_number_of_colissions": 15,
+    "reward_type": "Distance Field",
+    "ground_truth": "macro_plastic",
+    "frame_stacking": 1,
+    "state_index_stacking": [
+        1,
+        2,
+        3
+    ],
+    "trail_length": 10
+}

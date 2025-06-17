@@ -1,0 +1,45 @@
+{
+    "save_every": 1000,
+    "eval_every": 500,
+    "eval_episodes": 50,
+    "batch_size": 128,
+    "gamma": 0.99,
+    "tau": 0.001,
+    "lr": 0.0001,
+    "epsilon": 1.0,
+    "epsilon_values": [
+        1.0,
+        0.05
+    ],
+    "epsilon_interval": [
+        0.0,
+        0.5
+    ],
+    "beta": 0.4,
+    "num_atoms": 51,
+    "use_nu": true,
+    "nu": 1,
+    "nu_intervals": [
+        [
+            0.0,
+            1
+        ],
+        [
+            1,
+            1
+        ],
+        [
+            1,
+            0.0
+        ],
+        [
+            1.0,
+            0.0
+        ]
+    ],
+    "concatenatedDQN": false,
+    "nettype": "0",
+    "archtype": "v1",
+    "masked_actions": true,
+    "consensus": true
+}

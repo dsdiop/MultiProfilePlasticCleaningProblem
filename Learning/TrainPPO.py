@@ -248,7 +248,7 @@ if __name__ == "__main__":
     torch.backends.cudnn.deterministic = args.torch_deterministic
     device_str = 'cpu' if args.device == -1 else f'cuda:{args.device}'
     device = torch.device("cuda" if torch.cuda.is_available() and device_str else "cpu")
-
+    print(f"\nUsing device: {device}\n")
     # env setup
     # envs = gym.vector.SyncVectorEnv(
     #     [make_env(args.gym_id, args.seed + i, i, args.capture_video, run_name) for i in range(args.num_envs)]
