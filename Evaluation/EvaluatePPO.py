@@ -47,7 +47,7 @@ def parse_args():
     parser.add_argument("--metrics_directory", type=str, default=METRICS_DIRECTORY,
                         help="Directory to save evaluation metrics.")
     parser.add_argument("--device", type=int, default=0, choices=[-1, 0, 1])
-    parser.add_argument("--render", type=bool, default=True, help="Render the environment during evaluation.")
+    parser.add_argument("--render", type=bool, default=False, help="Render the environment during evaluation.")
     parser.add_argument("--agent", type=str, choices=["ppo", "greedy"], default="greedy", help="Agent type to evaluate")
     args = parser.parse_args()
     if isinstance(args.runs, str):

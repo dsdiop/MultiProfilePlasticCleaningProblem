@@ -53,13 +53,29 @@ class macro_plastic:
         #                                                                               size=self.pollution_spots_number).round().astype(int)
         # self.number_of_trash_elements_in_each_spot = np.clip(np.abs(number_of_trash_elements_in_each_spot),int(100/number_of_trash_elements_in_each_spot.shape[0]), self.max_number_of_trash_elements_per_spot)
         #total_trash_elements = 100
-        number_of_trash_elements_in_each_spot = self.rng_number_of_trash_elements.normal(loc=0, 
-                                                  scale=self.total_trash_elements, 
-                                                  size=self.pollution_spots_number).round().astype(int)
-        number_of_trash_elements_in_each_spot = np.clip(np.abs(number_of_trash_elements_in_each_spot), 1, self.total_trash_elements)
-        number_of_trash_elements_in_each_spot = (number_of_trash_elements_in_each_spot / number_of_trash_elements_in_each_spot.sum()) * self.total_trash_elements
-        self.number_of_trash_elements_in_each_spot = number_of_trash_elements_in_each_spot.round().astype(int)
-        self.number_of_trash_elements_in_each_spot[0] += self.total_trash_elements - self.number_of_trash_elements_in_each_spot.sum() # take the first element and add the difference if there is any
+        # Step 1: Generate pollution spots
+        weights = self.rng_number_of_trash_elements.random(self.pollution_spots_number)
+        weights /= weights.sum()
+        number_of_trash_elements_in_each_spot = (weights * self.total_trash_elements).round().astype(int)
+
+        # Step 4: Adjust rounding discrepancy more compactly
+        diff = self.total_trash_elements - number_of_trash_elements_in_each_spot.sum()
+        if diff != 0:
+            sign = 1 if diff > 0 else -1
+            for _ in range(abs(diff)):
+                # Prefer changing the largest if adding, or smallest > 1 if subtracting
+                if sign > 0:
+                    idx = number_of_trash_elements_in_each_spot.argmax()
+                else:
+                    candidates = np.where(number_of_trash_elements_in_each_spot > 1)[0]
+                    if len(candidates) == 0:
+                        break  # Avoid reducing any below 1
+                    idx = candidates[number_of_trash_elements_in_each_spot[candidates].argmax()]
+                number_of_trash_elements_in_each_spot[idx] += sign
+
+        # Step 5: Save result
+        self.number_of_trash_elements_in_each_spot = number_of_trash_elements_in_each_spot
+
         cov = 7.0
         self.particles = self.rng_trash_positions_MVN.multivariate_normal(self.visitable_positions[starting_points[0]], np.array([[cov, 0.0],[0.0, cov]]),size=(self.number_of_trash_elements_in_each_spot[0],)) 
         for i in range(1, self.pollution_spots_number):
