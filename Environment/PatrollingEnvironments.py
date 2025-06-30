@@ -13,6 +13,7 @@ import json
 from collections import deque
 from scipy.ndimage import gaussian_filter
 import heapq
+import copy
 
 background_colormap = matplotlib.colors.LinearSegmentedColormap.from_list("", ["sienna","dodgerblue"])
 
@@ -481,7 +482,7 @@ class MultiAgentPatrolling(gym.Env):
 			if self.active_agents[agent_id]:
 				#if action[agent_id] == 8:
 				n_trash_to_clean = 100
-				#n_trash_to_clean = 26 -  self.total_n_trash_cleaned[agent_id]
+				# n_trash_to_clean = 26 -  self.total_n_trash_cleaned[agent_id]
 				if self.gt.map[self.fleet.vehicles[agent_id].position[0],self.fleet.vehicles[agent_id].position[1]] > 0:
 					self.n_trash_cleaned[agent_id] = self.gt.clean_particles(self.fleet.vehicles[agent_id].position, n_trash_to_clean)
        # Update model #
@@ -505,7 +506,7 @@ class MultiAgentPatrolling(gym.Env):
 		done = {agent_id: self.fleet.get_distances()[agent_id] > self.distance_budget 
           		or self.fleet.fleet_collisions > self.max_collisions 
             	or self.percentage_of_trash_cleaned == 1
-				#or self.total_n_trash_cleaned[agent_id] > 25
+				# or self.total_n_trash_cleaned[agent_id] > 25
                 for agent_id in range(self.number_of_agents)}
 		self.active_agents = [not d for d in done.values()]
 		
@@ -515,6 +516,96 @@ class MultiAgentPatrolling(gym.Env):
 		self.info = {"trash_coverage": self.percentage_of_trash_cleaned, "map_coverage": self.percentage_of_map_visited}
 		return self.state if self.frame_stacking is None else self.frame_stacking.process(self.state), reward, done, self.info
 
+	def simulate_step(self, action: dict, clean_on_model=True):
+		""" Simulate a step to obtain rewards without updating the environment."""
+		# deepcopy the fleet and ground truth #
+		sim_fleet = copy.deepcopy(self.fleet)
+		sim_gt = copy.deepcopy(self.gt)
+		sim_model = copy.deepcopy(self.model)
+		sim_no_discovery_steps = copy.deepcopy(self.no_discovery_steps)
+  
+		# Process action movement only for active agents #
+		action = {action_id: action[action_id] for action_id in range(self.number_of_agents) if self.active_agents[action_id]}
+		collision_mask = sim_fleet.move(action)
+		n_trash_cleaned = np.array([0 for _ in range(self.number_of_agents)])
+		# Clean the trash if requested # --> Changed this to clean the trash if the agent is in a trash spot
+		
+		for agent_id in range(self.number_of_agents):
+			if self.active_agents[agent_id]:
+				n_trash_to_clean = 100
+				# n_trash_to_clean = 26 -  self.total_n_trash_cleaned[agent_id]
+				if clean_on_model:
+					# clean particles in the model if the agent is in a trash spot
+					agent_position_tuple = tuple(sim_fleet.vehicles[agent_id].position)
+					trash_on_pos = sim_model[agent_position_tuple]
+					if trash_on_pos > 0:
+						n_trash_cleaned[agent_id] = min(n_trash_to_clean, trash_on_pos)
+						sim_model[agent_position_tuple] -= n_trash_cleaned[agent_id]
+				else:
+					if sim_gt.map[sim_fleet.vehicles[agent_id].position[0],sim_fleet.vehicles[agent_id].position[1]] > 0:
+						n_trash_cleaned[agent_id] = sim_gt.clean_particles(sim_fleet.vehicles[agent_id].position, n_trash_to_clean)
+       # Update model #
+		if self.miopic:
+			model_ant = self.model.copy()
+			if not clean_on_model:
+				gt_ = sim_gt.read()
+				for idx, vehicle in enumerate(sim_fleet.vehicles):
+					if self.active_agents[idx]:
+						sim_model[vehicle.detection_mask.astype(bool)] = gt_[vehicle.detection_mask.astype(bool)]
+		
+		else:
+			self.model = sim_gt.read()
+		if 'Distance Field' in self.reward_type:
+				visit_reward_exploration = np.array(
+				[np.sum(sim_fleet.new_visited_mask[veh.detection_mask.astype(bool)].astype(np.float32) 
+						/ sim_fleet.redundancy_mask[veh.detection_mask.astype(bool)]) for veh in sim_fleet.vehicles])
+
+				# if an agent has spent a step without discovering anything, 
+				# it will receive a negative reward that will increase over time, 
+				# it will be reset when it discovers something	
+				innactivity_penalty_exploration = np.zeros_like(visit_reward_exploration)
+				redundancy_penalty_exploration = np.zeros_like(visit_reward_exploration)
+				for idx, agent in enumerate(sim_fleet.vehicles):
+					if self.percentage_of_map_visited == 1:
+						continue
+					if self.active_agents[idx]:
+						if np.sum(sim_fleet.new_visited_mask[agent.detection_mask.astype(bool)]) == 0:
+							sim_no_discovery_steps[idx] += 1
+							# Penalize based on the number of last positions in the detection mask
+							penalty = 0	
+							for i in range(len(self.last_positions)):
+								penalty += sum([np.sum(pos.astype(bool) & agent.detection_mask.astype(bool)) 
+											for pos in self.last_positions[i]])
+							redundancy_penalty_exploration[idx] = penalty/(np.sum(agent.detection_mask)*10)
+						else:
+							sim_no_discovery_steps[idx] = 0
+						innactivity_penalty_exploration[idx] = (1/self.min_movements_if_nocollisions) * sim_no_discovery_steps[idx]
+						#rewards_exploration[idx] -= 1
+				rewards_exploration = visit_reward_exploration - innactivity_penalty_exploration - redundancy_penalty_exploration
+
+
+				trash_collecting_reward_cleaning = n_trash_cleaned
+				filtered_map = self.calculate_field_map(self.normalized_known_information, sim_fleet.collective_mask, alpha=1.0)
+				distance_reward_cleaning = np.array([np.sum(filtered_map[veh.detection_mask.astype(bool)]
+										/ (np.sum(veh.detection_mask)))
+									for i,veh in enumerate(sim_fleet.vehicles)])
+				time_penalty_cleaning = np.ones_like(trash_collecting_reward_cleaning)
+
+				if model_ant is not None:
+					model_update_reward_cleaning = np.array([np.sum(np.abs(sim_model[veh.detection_mask.astype(bool)] - model_ant[veh.detection_mask.astype(bool)])) for veh in sim_fleet.vehicles])
+				else:
+					model_update_reward_cleaning = np.zeros_like(trash_collecting_reward_cleaning)
+
+				rewards_cleaning = trash_collecting_reward_cleaning + distance_reward_cleaning + model_update_reward_cleaning - time_penalty_cleaning
+				rewards = np.vstack((rewards_exploration, rewards_cleaning)).T
+				#print(rewards) 
+				self.info = {}
+
+				reward = {agent_id: rewards[agent_id] for agent_id in range(self.number_of_agents) if
+						self.active_agents[agent_id]}
+  
+		return reward
+	
 	def update_model(self,action):
 		""" Update the model using the new positions """
 

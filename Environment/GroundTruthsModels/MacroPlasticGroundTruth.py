@@ -15,7 +15,7 @@ macroplastic_colormap = matplotlib.colors.LinearSegmentedColormap.from_list("", 
 
 class macro_plastic:
 
-    def __init__(self, grid: np.ndarray, dt = 0.1, max_number_of_pollution_spots = 3, total_trash_elements = 100, seed = 0) -> None:
+    def __init__(self, grid: np.ndarray, dt = 0.1, max_number_of_pollution_spots = 10, total_trash_elements = 100, seed = 0) -> None:
         """ Generador de ground truths de plásticos con dinámica """
         self.seed = seed
         self.rng = np.random.default_rng(seed=self.seed) # random number generator, it's better than set a np.random.seed() (https://builtin.com/data-science/numpy-random-seed)
@@ -43,7 +43,7 @@ class macro_plastic:
         self.discretized_particles = np.array([])
     def reset(self):
         #self.in_bound_particles = np.array([])
-        self.pollution_spots_number = self.rng_pollution_spots_number.integers(1, self.max_number_of_pollution_spots+1)
+        self.pollution_spots_number = self.rng_pollution_spots_number.integers(3, self.max_number_of_pollution_spots+1)
         #starting_points = [np.array((self.rng.integers(self.map.shape[0]/6, 5*self.map.shape[0]/6), self.rng.integers(self.map.shape[1]/6, 5* self.map.shape[1]/6)))
         #                   for _ in range(self.pollution_spots_number)]
         

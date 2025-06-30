@@ -50,6 +50,7 @@ class MultiAgentNuWrapper(gym.Wrapper):
         # Initialize last coverage metrics
         self.last_trash_coverage = 0.0
         self.last_map_coverage = 0.0
+        self.simulate_steps = False  # Flag to control simulation mode
 
     def reset(self):
         obs , _= self.env.reset()
@@ -85,6 +86,10 @@ class MultiAgentNuWrapper(gym.Wrapper):
         actions = {agent_id: action for agent_id, action in actions.items()}
         # Process the agent step #
         # Step the environment
+        if self.simulate_steps:
+            # If simulating, we don't actually step the environment
+            reward = self.env.simulate_step(actions)
+            return None, np.sum(list(reward.values())) , None, None, {}
         next_obs, reward, done, info = self.env.step(actions)
         
         current_trash = info["trash_coverage"]  # e.g., 0.57
@@ -160,7 +165,7 @@ def make_env(
         env = MultiAgentNuWrapper(env, expert_nu)
         
         # Standard Gym wrappers
-        env = gym.wrappers.RecordEpisodeStatistics(env)
+        # env = gym.wrappers.RecordEpisodeStatistics(env)
         # if capture_video and idx == 0:
         #     env = gym.wrappers.RecordVideo(env, f"videos/{run_name}")
         
@@ -224,4 +229,51 @@ class Agent(nn.Module):
         entropy = dist.entropy().sum(-1)
 
         return action, logprob, entropy, self.critic(x)
+
+import itertools
+import numpy as np
+import copy
+from gym.vector import SyncVectorEnv
+
+# Suppose you want to evaluate C candidates each step
+# candidate_count = C
+# vec_env = SyncVectorEnv([make_env for _ in range(candidate_count)])
+# obs_batch = vec_env.reset()
+class GreedyAgent:
+    def __init__(self, env):
+        self.num_agents = env.num_agents        
+        self.env = env
+        import time
+        # print the time it takes to copy the environment
+        # start_time = time.time()
+        # self.sim_env = copy.deepcopy(env)
+        # end_time = time.time()
+        # print(f"Time taken to copy the environment: {end_time - start_time:.4f} seconds")
+        # start_time = time.time()
+        # _ = copy.deepcopy(env.fleet)
+        # end_time = time.time()
+        # print(f"Time taken to copy the environment: {end_time - start_time:.4f} seconds")
+        # start_time = time.time()
+        # self.sim_env = copy.deepcopy(env.gt)
+        # end_time = time.time()
+        # print(f"Time taken to copy the environment: {end_time - start_time:.4f} seconds")
+        # self.sim_env.reset()
+        # Ensure sim_env is a SyncVectorEnv for batch processing
+        # if not isinstance(self.sim_env, SyncVectorEnv):
+        #     self.sim_env = SyncVectorEnv([lambda: self.sim_env for _ in range(1)])
+
+    def act(self, obs):
+        best_nu = None
+        best_reward = -float("inf")
+        self.env.simulate_steps = True
+        for nu in itertools.product([0, 1], repeat=self.num_agents):
+            nu_vec = np.array(nu, dtype=np.float32)
+
+            _, reward , _, _, _ = self.env.step(nu_vec)
+
+            if reward > best_reward:
+                best_reward = reward
+                best_nu = nu_vec
+        self.env.simulate_steps = False
+        return best_nu
 

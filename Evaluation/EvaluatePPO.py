@@ -3,7 +3,7 @@ import os
 data_path = os.path.join(os.path.dirname(__file__), '..')
 sys.path.append(data_path)
 
-from Learning.utils import make_env, Agent
+from Learning.utils import make_env, Agent, GreedyAgent
 from Utils.metrics_wrapper import MetricsDataCreator
 
 import torch
@@ -17,13 +17,16 @@ from tqdm import trange
 import matplotlib.pyplot as plt
 
 # Configuration
-RUNS_DIR  = [#"malaga_port__macro_plastic__0__1749796562", # 10*(delta_trash + delta_map)/2 - 1
+RUNS_DIR  =  [#"malaga_port__macro_plastic__0__1749796562", # 10*(delta_trash + delta_map)/2 - 1
             #  "malaga_port__macro_plastic__0__1749862821" #100*(delta_trash + delta_map)/2 - 1
             #  "malaga_port__macro_plastic__0__1749930844" #  np.mean(list(reward.values())) + 10*(delta_trash + delta_map)/2 - 1
-             'malaga_port__macro_plastic__0__1749987331'  #   np.sum(list(reward.values())) + 100*(delta_trash + delta_map)/2 - 1
+            #  'malaga_port__macro_plastic__0__1749987331'  #   np.sum(list(reward.values())) + 100*(delta_trash + delta_map)/2 - 1
             #   "malaga_port__macro_plastic__0__1749715625",  # np.sum
             #   "malaga_port__macro_plastic__0__1749751301"  # np.mean
               #"malaga_port__macro_plastic__0__1749774774"  # (delta_trash + delta_map)/2 - 1
+            #   'malaga_port__macro_plastic__0__1750173760', # np.sum - 8 channel state
+            #   'malaga_port__macro_plastic__0__1750185322', # np.sum steps 256 - numenvs 16
+              'malaga_port__macro_plastic__0__1750189305' # np.sum 10000000 total steps
 ]
 DEFAULT_RUNS_DIR = [f"{data_path}/runs/{run}" for run in RUNS_DIR]
 DEFAULT_MODEL_NAME = "ppo_agent.pth"
@@ -32,7 +35,7 @@ METRICS_DIRECTORY = f"{data_path}/Evaluation/Results/"
 # metrics_directory= f'{data_path}Results_seed_{seed}_nu_steps_dist_field_{args.map}_30keps/{policy_type}_{nu_step}',
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="Evaluate one or multiple PPO agents.")
+    parser = argparse.ArgumentParser(description="Evaluate PPO or Greedy agent.")
     parser.add_argument("--num-episodes", type=int, default=200, help="Number of episodes to evaluate.")
     parser.add_argument("--seed", type=int, default=30, help="Random seed for reproducibility.")
     parser.add_argument("--runs", nargs='+', type=str, default=DEFAULT_RUNS_DIR,
@@ -43,14 +46,12 @@ def parse_args():
                         help="Name of the args .json file inside each run directory.")
     parser.add_argument("--metrics_directory", type=str, default=METRICS_DIRECTORY,
                         help="Directory to save evaluation metrics.")
-    parser.add_argument("--device", type=int, default=0, choices=[-1, 0, 1],
-                        help="Device to run evaluation on: -1 for CPU, 0 for GPU.")
-    parser.add_argument("--render", type=bool, default=False, 
-                        help="Render the environment during evaluation.")
+    parser.add_argument("--device", type=int, default=0, choices=[-1, 0, 1])
+    parser.add_argument("--render", type=bool, default=True, help="Render the environment during evaluation.")
+    parser.add_argument("--agent", type=str, choices=["ppo", "greedy"], default="greedy", help="Agent type to evaluate")
     args = parser.parse_args()
-    # check if runs directory is a list of directories
     if isinstance(args.runs, str):
-        args.runs = [args_eval.runs]
+        args.runs = [args.runs]
     return args
 
 
@@ -96,7 +97,7 @@ if __name__ == "__main__":
         env_kwargs = {
             "scenario_map": sc_map,
             "fleet_initial_positions": initial_positions,
-            "distance_budget": args_env.distance_budget,
+            "distance_budget": 100,
             "number_of_vehicles": N,  # Or use args.num_agents if defined
             "seed": args_eval.seed,
             "miopic": args_env.miopic,
@@ -132,15 +133,30 @@ if __name__ == "__main__":
             run_name=os.path.basename(run_dir),
         )
         env = env_fn()
+        
+        if args_eval.agent == "ppo":
+            agent = Agent(env).to(device)
+            agent.load_state_dict(torch.load(model_path, map_location=device))
+            agent.eval()
+        else:
+            agent = GreedyAgent(env)
 
-        agent = Agent(env).to(device)
-        agent.load_state_dict(torch.load(model_path, map_location=device))
-        agent.eval()
         
         metrics_directory = f"{args_eval.metrics_directory}Results_seed_{args_eval.seed}_{args_env.map}_{args_env.benchmark}"
         if not os.path.exists(metrics_directory):
             os.makedirs(metrics_directory)
-        policy_name = run_dir.split('/')[-1]
+        # if greey agent, use greedy as policy name and use HeuristicResults as metrics name
+        # if ppo agent, use the run directory name as policy name and DRLResults as metrics name
+        if args_eval.agent == "ppo":
+            algorithm_name = 'PPO'
+            policy_name = algorithm_name + '_' + run_dir.split('/')[-1]
+            
+        if args_eval.agent == "greedy":
+            algorithm_name = 'Greedy'
+            policy_name = "Greedy4_"
+        else:
+            algorithm_name = 'DRL'
+            policy_name = run_dir.split('/')[-1]
         metrics_directory= f"{metrics_directory}/{policy_name}_"
         metrics = MetricsDataCreator(metrics_names=['Policy Name',
                                                         'Accumulated Reward',
@@ -148,20 +164,20 @@ if __name__ == "__main__":
                                                         'nu',
                                                         'Percentage of Trash Cleaned',
                                                         'Percentage Visited'],
-                                        algorithm_name='DRL',
-                                        experiment_name='DRLResults',
+                                        algorithm_name=algorithm_name,
+                                        experiment_name=f'{algorithm_name}Results',
                                         directory=metrics_directory)
-        if os.path.exists(metrics_directory + 'DRLResults' + '.csv'):
-            metrics.load_df(metrics_directory + 'DRLResults' + '.csv')
-            
+        if os.path.exists(metrics_directory + f'{algorithm_name}Results' + '.csv'):
+            metrics.load_df(metrics_directory + f'{algorithm_name}Results' + '.csv')
+
         paths = MetricsDataCreator(metrics_names=['vehicle', 'x', 'y'],
-                                algorithm_name='DRL',
-                                experiment_name='DRL_paths',
+                                algorithm_name=algorithm_name,
+                                experiment_name=f'{algorithm_name}_paths',
                                 directory=metrics_directory)
-        
-        if os.path.exists(metrics_directory + 'DRL_paths' + '.csv'):
-            paths.load_df(metrics_directory + 'DRL_paths' + '.csv')
-        
+
+        if os.path.exists(metrics_directory + f'{algorithm_name}_paths' + '.csv'):
+            paths.load_df(metrics_directory + f'{algorithm_name}_paths' + '.csv')
+
         for episode in trange(args_eval.num_episodes, desc=f"Evaluating {policy_name}"):
             obs, _ = env.reset()
             
@@ -188,15 +204,20 @@ if __name__ == "__main__":
                 paths.register_step(run_num=episode, step=total_length, metrics=[veh_id, veh.position[0], veh.position[1]])
 
             while not done:
-                obs_tensor = torch.Tensor(obs).unsqueeze(0).to(device)
-                with torch.no_grad():
-                    action, _, _, _ = agent.get_action_and_value(obs_tensor)
-                next_obs, reward, terminated, truncated, info = env.step(action.cpu().numpy()[0])
+                if args_eval.agent == "ppo":
+                    obs_tensor = torch.Tensor(obs).unsqueeze(0).to(device)
+                    with torch.no_grad():
+                        action, _, _, _ = agent.get_action_and_value(obs_tensor)
+                    nu_ = action.cpu().numpy()[0]
+                else:
+                    nu_ = agent.act(obs)
+
+                next_obs, reward, terminated, truncated, info = env.step(nu_)
                 done = terminated or truncated
                 total_reward += reward
-                
+                total_length += 1
                 if args_eval.render:
-                    print(f"Episode: {episode}, Percentage of map visited/cleaned: {env.percentage_of_map_visited:.2f}/{env.percentage_of_trash_cleaned:.2f},  nu: {action.cpu().numpy()[0]}")
+                    print(f"Episode/Step: {episode}/{total_length}, Percentage of map visited/cleaned: {env.percentage_of_map_visited:.2f}/{env.percentage_of_trash_cleaned:.2f},  nu: {nu_}")
                     env.render()
                     
                 obs = next_obs
@@ -204,7 +225,7 @@ if __name__ == "__main__":
                 percentage_visited = env.percentage_of_map_visited
                 total_reward += reward
                 percentage_of_trash_cleaned = env.percentage_of_trash_cleaned
-                nu_ = action.cpu().numpy()[0]
+                # nu_ = action.cpu().numpy()[0]
                 metrics_list = [policy_name, total_reward,
                             total_length, nu_,
                             percentage_of_trash_cleaned,

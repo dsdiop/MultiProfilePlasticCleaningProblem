@@ -9,7 +9,7 @@ map_ = 'alamillo_lake'
 map_ = 'malaga_port'
 print(map_)
 
-csv_list = glob.glob("./Evaluation/Results/Results_seed_30_malaga_port_macro_plastic/*DRLResults.csv")
+csv_list = glob.glob("./Evaluation/Results/Results_seed_30_malaga_port_macro_plastic/*3__GreedyResults.csv")
 
 Finalpolicies = {csv_list[i].split('\\')[-1].split('.csv')[0]:pd.read_csv(csv_list[i]) for i in range(len(csv_list))}
 
